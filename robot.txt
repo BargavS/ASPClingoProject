@@ -1,0 +1,175 @@
+%Input descriptions file convert.
+%init(object(node,’n’),value(at,pair(’x’,’y’))).
+%init(object(highway,’h’),value(at,pair(’x’,’y’))).
+%init(object(pickingStation,’p’),value(at,pair(’x’,’y’))).
+%init(object(robot,’r’),value(at,pair(’x’,’y’))).
+%init(object(shelf,’s’),value(at,pair(’x’,’y’))).
+%init(object(product,’i’),value(on,pair(’s’,’u’))).
+%init(object(order,’o’),value(line,pair(’i’,’u’))).
+%init(object(order,’o’),value(pickingStation,’p’)).
+
+
+%output description file convert.
+%occurs(object(robot,’r’),move(’dx’,’dy’),’t’).
+%occurs(object(robot,’r’),pickup,’t’).
+%occurs(object(robot,’r’),deliver(’o’,’i’,’u’),’t’).
+%occurs(object(robot,’r’),putdown,’t’).
+
+pair(X,Y):- init(object(node,N),value(at,pair(X,Y))).
+move(0,1;0,-1;-1,0;1,0).
+%definiing node, robot, highway,pickingstation, shelf, product, order using inputs.
+
+node(N) :- init(object(node,N),value(at,pair(X,Y))).
+robot(R) :- init(object(robot,R),value(at,pair(X,Y))).
+highway(H) :- init(object(highway,H),value(at,pair(X,Y))).
+shelf(S) :- init(object(shelf,S),value(at,pair(X,Y))).
+product(P) :- init(object(product,P),value(at,pair(X,Y))).
+pickingstation(PKS):- init(object(pickingStation,PKS),value(at,pair(X,Y))),init(object(node,N),value(at,pair(X,Y))).
+order(OR) :- init(object(order,OR),value(pickingStation,PKS)).
+robotsCnt(RC):- RC=#count{R:robot(R)}.
+
+%defining the init statements and their corresponding conversions(location at step 0).
+
+
+
+nodeLoc(N,pair(X,Y)) :- init(object(node,N),value(at,pair(X,Y))).
+robotLoc(R,object(node,N),0) :- init(object(robot,R),value(at,pair(X,Y))),nodeLoc(N,pair(X,Y)).
+shelfLoc(S, object(node,N),0)  :- init(object(shelf,S), value(at,pait(X,Y))),nodeLoc(N,pair(X,Y)).
+productLoc(P, object(shelf,S), with(quantity,U),0):- init(object(product,P),value(on,pair(S,U))).
+pickingStationLoc(PKS,N) :- init(object(pickingStation,PKS),value(at,pair(X,Y))),init(object(node,N),value(at,pair(X,Y))).
+orderLoc(OR,object(node,N),contains(P,U-PU),T+1):- init(object(order,OR),value(pickingStation,PKS)), pickingStationLoc(PKS,N),init(object(order,OR),value(line,pair(P,U))).
+
+
+
+%need timestep (n), numberofrobots RC, CL, RW
+
+
+
+%convert outputs
+%occurs(object(robot,’r’),move(’dx’,’dy’),’t’).
+%occurs(object(robot,’r’),pickup,’t’).
+%occurs(object(robot,’r’),deliver(’o’,’i’,’u’),’t’).
+%occurs(object(robot,’r’),putdown,’t’).
+%Partial quantity PU.
+
+occurs(object(robot,R),move(DX,DY),T) :- robotMove(R,move(DX,DY),T).
+occurs(object(robot,R),pickup,T) :- robotPickup(R,S,T), shelf(S).
+occurs(object(robot,R),deliver(O,P,PU),T):- robotDeliver(R,P,with(S,P,PU), T).
+occurs(object(robot,R),putdown,T):-robotPutdown(R,S,T), shelf(S).
+
+%law of inertia
+{robotLoc(R,object(node,N),T+1)}:- robotLoc(R,object(node,N),T), T=0..n-1.
+{shelfLoc(S,object(node,N),T+1)}:-shelfOn(S,object(node,N),T),T=0..n-1.
+{shelfLoc(S,object(robot,R),T+1)}:-shelfOn(S,object(robot,R),T), T=0..n-1.
+{productLoc(P,object(shelf,S),with(quantity,U),T+1)}:- productLoc(P,object(shelf,S),with(quantity,U),T), T=0..n-1.
+{orderLoc(OR,object(node,N),contains(P,U),T+1)}:- orderLoc(OR,object(node,N),contains(P,U),T), productLoc(P,object(shelf,S),with(quantity,PU),T), T=0..n-1.
+
+%effect and preconditions of actions.
+
+robotLoc(R,object(node,N1),T+1):- robotLoc(R,object(node,N),T), nodeLoc(N,pair(X,Y)), nodeLoc(N1, pair(X+DX,Y+DY)), robotMove(R,move(DX,DY),T).
+shelfLoc(S,object(robot,R),T+1):- robotPickup(R,S,T), shelfLoc(S,object(node,N),T), robotLoc(R,object(node,N),T).
+shelfLoc(S,object(node,N),T+1):- robotPutdown(R,S,T), shelfLoc(S,object(robot,R),T), robotLoc(R,object(node,N),T).
+productLoc(P,object(shelf,S),with(quantity,U-PU),T+1):- robotDeliver(R,OR,with(S,P,PU),T), productLoc(P,object(shelf,S),with(quantity,U),T).
+orderLoc(OR,object(node,N),contains(P,U-PU),T+1):- robotDeliver(R,OR,with(S,P,PU),T), orderLoc(OR,object(node,N),contains(P,U),T).
+
+:- occurs(object(robot,R),X,T), occurs(object(robot,R),Y,T), X!=Y.
+:- robotLoc(R1,object(node,N),T), robotLoc(R2,object(node,N),T), robot(R1),robot(R2),R1!=R2, T=0..n-1.
+:- robotLoc(R,object(node,N1),T), robotLoc(R,object(node,N2),T), robot(R),N1!=N2, T=0..n-1.
+:- robotLoc(R1,object(node,N1),T), robotLoc(R1,object(node,N2),T+1), robotLoc(R2,object(node,N2),T), robotLoc(R2,object(node,N1),T+1), R1!=R2.
+:- shelfLoc(S,object(robot,R),T), shelfLoc(S,object(robot,R1),T),R!=R1,robot(R),robot(R1),shelf(S), T=0..n.
+:- shelfLoc(S1,object(robot,R),T), shelfLoc(S2,object(robot,R),T),S1!=S2,robot(R),shelf(S1),shelf(S2), T=0..n.
+:- shelfLoc(S,object(node,N1),T), shelfLoc(S,object(node,N2),T),N1!=N2,node(N1),node(N2),shelf(S), T=0..n.
+:- shelfLoc(S1,object(node,N),T), shelfLoc(S2,object(node,N),T),S1!=S2,node(N),shelf(S1),shelf(S2), T=0..n.
+:- shelfLoc(S1,object(node,N),T), shelfLoc(S2,object(robot,R),T),S1=S2,node(N),robot(R),shelf(S), T=0..n.
+:- pickingStationLoc(PKS,N), highway(N),pickingstation(PKS).
+:- shelfLoc(S,object(node,N),T), highway(N),T=0..n-1.
+%actions are exogenous.
+{robotMove(R,move(DX,DY),T):move(DX,DY)}1:- R=1..RC, T=0..n-1.
+{robotPickup(R,S,T):shelf(S)}1:- R=1..RC, T=0..n-1.
+{robotPutdown(R,S,T):shelf(S)}1:- R=1..RC,T=0..n-1.
+{robotDeliver(R,OR,with(S,P,PU),T):orderLoc(OR,object(node,N),contains(P,U),T), productLoc(P,object(shelf,S),with(quantity,U),T), PU=1..U}1:- R=1..RC, T=0..n-1.
+
+%constraints.
+:- robotPickup(R1,S,T), robotPickup(R2,S,T), R1!=R2, robot(R1), robot(R2), shelf(S), T=0..n-1.
+:- robotPickup(R,S,T), shelfLoc(S2,object(robot,RI),T).
+:- robotLoc(R,object(node,N),T), robotMove(R,move(DX,DY),T), nodeLoc(N,pair(X,Y)), not X+DX>1.
+:- robotLoc(R,object(node,N),T), robotMove(R,move(DX,DY),T), nodeLoc(N,pair(X,Y)), not Y+DY>1.
+:- robotLoc(R,object(node,N),T), robotMove(R,move(DX,DY),T), nodeLoc(N,pair(X,Y)), not X+DX<CL.
+:- robotLoc(R,object(node,N),T), robotMove(R,move(DX,DY),T), nodeLoc(N,pair(X,Y)), not Y+DY<RW.
+:- robotPickup(R,S,T), shelfLoc(S,object(node,N),T), not robotLoc(R,object(node,N),T). 
+:- robotPutdown(R1,S,T), robotPutdown(R2,S,T),R1!=R2.
+:- robotPutdown(R,S,T), not shelfOn(S,object(robot,R),T).
+:- robotPutdown(R,S,T), robotLoc(R,object(node,N),T), highway(N). 
+:- robotDeliver(R,OR,with(S,P,PU),T), orderLoc(OR,object(node,N),contains(P,_),T), not robotLoc(R,object(node, N),T).
+:- robotDeliver(R,OR,with(S,P,PU),T), productLoc(P,object(shelf,S),with(quantity,U),T), not shelfLoc(S,object(robot,R),T).
+:- robotDeliver(R,OR,with(S,P,PU),T), orderLoc(OR,object(node,N),contains(P,U),T), PU>U.
+:- robotDeliver(R,OR,with(S,P,PU),T), productOn(P,object(shelf,S),with(quantity,U),T), PU>U.
+
+%inputs
+ 
+%initial states 
+init(object(node,1),value(at,pair(1,1))).
+init(object(node,2),value(at,pair(2,1))).
+init(object(node,3),value(at,pair(3,1))).
+init(object(node,4),value(at,pair(4,1))).
+init(object(node,5),value(at,pair(1,2))).
+init(object(node,6),value(at,pair(2,2))).
+init(object(node,7),value(at,pair(3,2))).
+init(object(node,8),value(at,pair(4,2))).
+init(object(node,9),value(at,pair(1,3))).
+init(object(node,10),value(at,pair(2,3))).
+init(object(node,11),value(at,pair(3,3))).
+init(object(node,12),value(at,pair(4,3))).
+init(object(node,13),value(at,pair(1,4))).
+init(object(node,14),value(at,pair(2,4))).
+init(object(node,15),value(at,pair(3,4))).
+init(object(node,16),value(at,pair(4,4))).
+
+init(object(highway,4),value(at,pair(4,1))).
+init(object(highway,8),value(at,pair(4,2))).
+init(object(highway,12),value(at,pair(4,3))).
+init(object(highway,13),value(at,pair(1,4))).
+init(object(highway,14),value(at,pair(2,4))).
+init(object(highway,15),value(at,pair(3,4))).
+init(object(highway,16),value(at,pair(4,4))).
+
+init(object(pickingStation,1),value(at,pair(1,3))).
+init(object(pickingStation,2),value(at,pair(3,1))).
+
+init(object(robot,1),value(at,pair(4,3))).
+init(object(robot,2),value(at,pair(2,2))).
+
+init(object(shelf,1),value(at,pair(3,3))).
+init(object(shelf,2),value(at,pair(2,1))).
+init(object(shelf,3),value(at,pair(2,3))).
+init(object(shelf,4),value(at,pair(2,2))).
+init(object(shelf,5),value(at,pair(3,2))).
+init(object(shelf,6),value(at,pair(1,2))).
+
+init(object(product,1),value(on,pair(3,1))).
+init(object(product,2),value(on,pair(4,1))).
+init(object(product,3),value(on,pair(6,4))).
+init(object(product,4),value(on,pair(5,1))).
+init(object(product,4),value(on,pair(6,1))).
+
+init(object(order,1),value(pickingStation,1)).
+init(object(order,1),value(line,pair(1,1))).
+init(object(order,1),value(line,pair(3,4))).
+init(object(order,2),value(pickingStation,2)).
+init(object(order,2),value(line,pair(2,1))).
+init(object(order,3),value(pickingStation,2)).
+init(object(order,3),value(line,pair(4,1))).
+
+%final 
+:- not orderLoc(OR,object(node,_),contains(P,0),n), orderLoc(OI,object(node,_),contains(P,_),0).
+
+#minimize{1,A,B,T:occurs(A,B,T)}.
+#minimize{T:occurs(A,B,T)}.
+
+
+#show occurs/3.
+
+
+
+
+
